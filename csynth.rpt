@@ -1,0 +1,183 @@
+
+
+================================================================
+== Synthesis Summary Report of 'krnl_proj'
+================================================================
++ General Information: 
+    * Date:           Sat Jan 17 07:19:00 2026
+    * Version:        2023.2 (Build 4023990 on Oct 11 2023)
+    * Project:        krnl_proj
+    * Solution:       hls (Vitis Kernel Flow Target)
+    * Product family: virtexuplusHBM
+    * Target device:  xcu55c-fsvh2892-2L-e
+    
+
++ Performance & Resource Estimates: 
+    
+    PS: '+' for module; 'o' for loop; '*' for dataflow
+    +-------------------------------------------------+--------+-------+---------+-----------+----------+---------+------+----------+---------+----+------------+-------------+-----+
+    |                     Modules                     |  Issue |       | Latency |  Latency  | Iteration|         | Trip |          |         |    |            |             |     |
+    |                     & Loops                     |  Type  | Slack | (cycles)|    (ns)   |  Latency | Interval| Count| Pipelined|  BRAM   | DSP|     FF     |     LUT     | URAM|
+    +-------------------------------------------------+--------+-------+---------+-----------+----------+---------+------+----------+---------+----+------------+-------------+-----+
+    |+ krnl_proj*                                     |  Timing|  -0.00|        -|          -|         -|        -|     -|  dataflow|  8 (~0%)|   -|  81869 (3%)|  103836 (7%)|    -|
+    | + core_processor                                |  Timing|  -0.00|        -|          -|         -|        -|     -|        no|        -|   -|  80718 (3%)|  101885 (7%)|    -|
+    |  o VITIS_LOOP_25_1                              |       -|   2.43|        -|          -|      1602|        -|     -|        no|        -|   -|           -|            -|    -|
+    |   o VITIS_LOOP_29_2                             |       -|   2.43|     1600|  5.333e+03|        50|        -|    32|        no|        -|   -|           -|            -|    -|
+    |    + core_processor_Pipeline_VITIS_LOOP_37_3    |  Timing|  -0.00|       46|    153.318|         -|       46|     -|        no|        -|   -|  80067 (3%)|  101593 (7%)|    -|
+    |     o VITIS_LOOP_37_3                           |       -|   2.43|       44|    146.652|        30|        1|    16|       yes|        -|   -|           -|            -|    -|
+    |      + update_window_and_check_parallel         |  Timing|  -0.00|       27|     89.991|         -|        1|     -|       yes|        -|   -|  79837 (3%)|   92648 (7%)|    -|
+    | + entry_proc                                    |       -|   1.21|        0|      0.000|         -|        0|     -|        no|        -|   -|     3 (~0%)|     29 (~0%)|    -|
+    | + output_formatter                              |       -|   0.07|        -|          -|         -|        -|     -|        no|        -|   -|   417 (~0%)|   1362 (~0%)|    -|
+    |  o VITIS_LOOP_108_1                             |       -|   2.43|        -|          -|         -|        -|     -|        no|        -|   -|           -|            -|    -|
+    |   + output_formatter_Pipeline_VITIS_LOOP_111_2  |       -|   0.07|        -|          -|         -|        -|     -|        no|        -|   -|   329 (~0%)|   1092 (~0%)|    -|
+    |    o VITIS_LOOP_111_2                           |       -|   2.43|        -|          -|         2|        1|     -|       yes|        -|   -|           -|            -|    -|
+    +-------------------------------------------------+--------+-------+---------+-----------+----------+---------+------+----------+---------+----+------------+-------------+-----+
+
+
+================================================================
+== HW Interfaces
+================================================================
+* S_AXILITE Interfaces
++---------------+------------+---------------+--------+----------+
+| Interface     | Data Width | Address Width | Offset | Register |
++---------------+------------+---------------+--------+----------+
+| s_axi_control | 32         | 5             | 16     | 0        |
++---------------+------------+---------------+--------+----------+
+
+* S_AXILITE Registers
++---------------+-------------+--------+-------+--------+----------------------------------+------------------------------------------------------------------------------------+
+| Interface     | Register    | Offset | Width | Access | Description                      | Bit Fields                                                                         |
++---------------+-------------+--------+-------+--------+----------------------------------+------------------------------------------------------------------------------------+
+| s_axi_control | CTRL        | 0x00   | 32    | RW     | Control signals                  | 0=AP_START 1=AP_DONE 2=AP_IDLE 3=AP_READY 4=AP_CONTINUE 7=AUTO_RESTART 9=INTERRUPT |
+| s_axi_control | GIER        | 0x04   | 32    | RW     | Global Interrupt Enable Register | 0=Enable                                                                           |
+| s_axi_control | IP_IER      | 0x08   | 32    | RW     | IP Interrupt Enable Register     | 0=CHAN0_INT_EN 1=CHAN1_INT_EN                                                      |
+| s_axi_control | IP_ISR      | 0x0c   | 32    | RW     | IP Interrupt Status Register     | 0=CHAN0_INT_ST 1=CHAN1_INT_ST                                                      |
+| s_axi_control | dest        | 0x10   | 32    | W      | Data signal of dest              |                                                                                    |
+| s_axi_control | num_packets | 0x18   | 32    | W      | Data signal of num_packets       |                                                                                    |
++---------------+-------------+--------+-------+--------+----------------------------------+------------------------------------------------------------------------------------+
+
+* AXIS
++-----------+-----------+---------------+-------+-------+-----+-------+-------+--------+-------+-------+--------+
+| Interface | Direction | Register Mode | TDATA | TDEST | TID | TKEEP | TLAST | TREADY | TSTRB | TUSER | TVALID |
++-----------+-----------+---------------+-------+-------+-----+-------+-------+--------+-------+-------+--------+
+| k2n       | out       | both          | 512   | 16    | 1   | 64    | 1     | 1      | 64    | 1     | 1      |
+| n2k       | in        | both          | 512   | 16    | 1   | 64    | 1     | 1      | 64    | 1     | 1      |
++-----------+-----------+---------------+-------+-------+-----+-------+-------+--------+-------+-------+--------+
+
+* TOP LEVEL CONTROL
++-----------+---------------+-----------+
+| Interface | Type          | Ports     |
++-----------+---------------+-----------+
+| ap_clk    | clock         | ap_clk    |
+| ap_rst_n  | reset         | ap_rst_n  |
+| interrupt | interrupt     | interrupt |
+| ap_ctrl   | ap_ctrl_chain |           |
++-----------+---------------+-----------+
+
+
+================================================================
+== SW I/O Information
+================================================================
+* Top Function Arguments
++-------------+-----------+-----------------------------------------------------------+
+| Argument    | Direction | Datatype                                                  |
++-------------+-----------+-----------------------------------------------------------+
+| n2k         | in        | stream<hls::axis<ap_uint<512>, 1, 1, 16, '8', false>, 0>& |
+| k2n         | out       | stream<hls::axis<ap_uint<512>, 1, 1, 16, '8', false>, 0>& |
+| dest        | in        | unsigned int                                              |
+| num_packets | in        | unsigned int                                              |
++-------------+-----------+-----------------------------------------------------------+
+
+* SW-to-HW Mapping
++-------------+---------------+-----------+---------------------------------------+
+| Argument    | HW Interface  | HW Type   | HW Info                               |
++-------------+---------------+-----------+---------------------------------------+
+| n2k         | n2k           | interface |                                       |
+| k2n         | k2n           | interface |                                       |
+| dest        | s_axi_control | register  | name=dest offset=0x10 range=32        |
+| num_packets | s_axi_control | register  | name=num_packets offset=0x18 range=32 |
++-------------+---------------+-----------+---------------------------------------+
+
+
+================================================================
+== M_AXI Burst Information
+================================================================
+ Note: All burst requests might be further partitioned into multiple requests during RTL generation based on max_read_burst_length or max_write_burst_length settings.
+
+
+================================================================
+== Bind Op Report
+================================================================
++------------------------------------------------+-----+--------+---------------------+-----+--------+---------+
+| Name                                           | DSP | Pragma | Variable            | Op  | Impl   | Latency |
++------------------------------------------------+-----+--------+---------------------+-----+--------+---------+
+| + krnl_proj                                    | 0   |        |                     |     |        |         |
+|  + core_processor                              | 0   |        |                     |     |        |         |
+|    p_4_fu_260_p2                               |     |        | p_4                 | add | fabric | 0       |
+|    add_ln37_fu_282_p2                          |     |        | add_ln37            | add | fabric | 0       |
+|   + core_processor_Pipeline_VITIS_LOOP_37_3    | 0   |        |                     |     |        |         |
+|     global_byte_counter_fu_357_p2              |     |        | global_byte_counter | add | fabric | 0       |
+|     i_3_fu_285_p2                              |     |        | i_3                 | add | fabric | 0       |
+|  + output_formatter                            | 0   |        |                     |     |        |         |
+|    p_2_fu_157_p2                               |     |        | p_2                 | add | fabric | 0       |
+|   + output_formatter_Pipeline_VITIS_LOOP_111_2 | 0   |        |                     |     |        |         |
+|     add_ln142_fu_253_p2                        |     |        | add_ln142           | add | fabric | 0       |
+|     add_ln150_fu_271_p2                        |     |        | add_ln150           | add | fabric | 0       |
+|     add_ln158_fu_295_p2                        |     |        | add_ln158           | add | fabric | 0       |
++------------------------------------------------+-----+--------+---------------------+-----+--------+---------+
+
+
+================================================================
+== Storage Report
+================================================================
++-------------------+--------------+-------------+------+------+--------+---------------+--------+---------+------------------+
+| Name              | Usage        | Type        | BRAM | URAM | Pragma | Variable      | Impl   | Latency | Bitwidth, Depth, |
+|                   |              |             |      |      |        |               |        |         | Banks            |
++-------------------+--------------+-------------+------+------+--------+---------------+--------+---------+------------------+
+| + krnl_proj       |              |             | 8    | 0    |        |               |        |         |                  |
+|   control_s_axi_U | interface    | s_axilite   |      |      |        |               |        |         |                  |
+|   dest_c_U        | fifo channel | scalar prop |      |      |        | dest_c        | srl    | 0       | 32, 3, 1         |
+|   match_fifo_U    | fifo channel | stream      | 8    |      |        | match_fifo    | memory | 0       | 129, 256, 1      |
+|   num_packets_c_U | fifo channel | scalar prop |      |      |        | num_packets_c | srl    | 0       | 32, 2, 1         |
++-------------------+--------------+-------------+------+------+--------+---------------+--------+---------+------------------+
+
+
+================================================================
+== Pragma Report
+================================================================
+* Valid Pragma Syntax
++-----------------+-------------------------------------------+-----------------------------------------------------------------------+
+| Type            | Options                                   | Location                                                              |
++-----------------+-------------------------------------------+-----------------------------------------------------------------------+
+| loop_tripcount  | min=1 max=32                              | ../../src/krnl_proj.cpp:30 in core_processor                          |
+| pipeline        | II=1                                      | ../../src/krnl_proj.cpp:38 in core_processor                          |
+| array_partition | variable=chunk complete                   | ../../src/krnl_proj.cpp:42 in core_processor, chunk                   |
+| unroll          |                                           | ../../src/krnl_proj.cpp:45 in core_processor                          |
+| array_partition | variable=results complete                 | ../../src/krnl_proj.cpp:52 in core_processor, results                 |
+| unroll          |                                           | ../../src/krnl_proj.cpp:62 in core_processor                          |
+| unroll          |                                           | ../../src/krnl_proj.cpp:71 in core_processor                          |
+| pipeline        | II=1                                      | ../../src/krnl_proj.cpp:112 in output_formatter                       |
+| interface       | axis port=n2k                             | ../../src/krnl_proj.cpp:179 in krnl_proj, n2k                         |
+| interface       | axis port=k2n                             | ../../src/krnl_proj.cpp:180 in krnl_proj, k2n                         |
+| interface       | s_axilite port=dest bundle=control        | ../../src/krnl_proj.cpp:181 in krnl_proj, dest                        |
+| interface       | s_axilite port=num_packets bundle=control | ../../src/krnl_proj.cpp:182 in krnl_proj, num_packets                 |
+| interface       | s_axilite port=return bundle=control      | ../../src/krnl_proj.cpp:183 in krnl_proj, return                      |
+| dataflow        |                                           | ../../src/krnl_proj.cpp:185 in krnl_proj                              |
+| stream          | variable=match_fifo depth=256             | ../../src/krnl_proj.cpp:188 in krnl_proj, match_fifo                  |
+| inline          |                                           | ../../src/scanner.cpp:5 in decode_byte                                |
+| unroll          |                                           | ../../src/scanner.cpp:8 in decode_byte                                |
+| pipeline        | II=1                                      | ../../src/scanner.cpp:21 in update_window_and_check_parallel          |
+| inline          | off                                       | ../../src/scanner.cpp:22 in update_window_and_check_parallel          |
+| array_partition | variable=window complete                  | ../../src/scanner.cpp:27 in update_window_and_check_parallel, window  |
+| dependence      | variable=window inter false               | ../../src/scanner.cpp:29 in update_window_and_check_parallel, window  |
+| array_partition | variable=decoded complete                 | ../../src/scanner.cpp:33 in update_window_and_check_parallel, decoded |
+| unroll          |                                           | ../../src/scanner.cpp:36 in update_window_and_check_parallel          |
+| unroll          |                                           | ../../src/scanner.cpp:43 in update_window_and_check_parallel          |
+| unroll          |                                           | ../../src/scanner.cpp:49 in update_window_and_check_parallel          |
+| unroll          |                                           | ../../src/scanner.cpp:54 in update_window_and_check_parallel          |
+| unroll          |                                           | ../../src/scanner.cpp:63 in update_window_and_check_parallel          |
+| unroll          | factor=16                                 | ../../src/scanner.cpp:73 in update_window_and_check_parallel          |
+| unroll          |                                           | ../../src/scanner.cpp:80 in update_window_and_check_parallel          |
++-----------------+-------------------------------------------+-----------------------------------------------------------------------+
+
+

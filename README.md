@@ -1,149 +1,153 @@
-# DAT480 - Reconfigurable Computing Project: High-Throughput Hardware Pattern Matching Engine
+# DAT480 Reconfigurable Computing
 
-[![Platform](https://img.shields.io/badge/Platform-AMD%20Xilinx%20Alveo%20U55C-orange.svg)](https://www.xilinx.com/products/boards-and-kits/alveo/u55c.html)
-[![Toolchain](https://img.shields.io/badge/Vitis%20HLS-2023.2-blue.svg)](https://www.xilinx.com/products/design-tools/vitis/vitis-hls.html)
-[![Framework](https://img.shields.io/badge/Host-PYNQ%20%2F%20VNX-green.svg)](https://pynq.readthedocs.io/)
-[![Throughput](https://img.shields.io/badge/Measured%20Throughput-3.23%20Gbps-brightgreen.svg)](#4-hardware-evaluation--performance)
-[![Institution](https://img.shields.io/badge/Institution-Chalmers%20University%20of%20Technology-navy.svg)](https://www.chalmers.se/)
+Course project for **DAT480: Reconfigurable Computing** at Chalmers University of Technology.
 
-## 1. Overview
+This project implements a hardware-accelerated pattern matching engine (Deep Packet Inspection / NIDS) on an **AMD Alveo U55C FPGA** (`xcu55c-fsvh2892-2L-e`) using **Vitis HLS** and the **Vitis Network Example (VNX)** UDP/IP streaming framework.
 
-This repository contains the design, implementation, and evaluation of a high-performance **Hardware Pattern Matching Engine** for Network Intrusion Detection Systems (NIDS), developed for the **DAT480 Reconfigurable Computing** course at **Chalmers University of Technology** (January 2026).
-
-- **Authors**: Guanhua Huang, Oliver Ivarsson, Rohan Paul Jamieson
-- **Target Device**: AMD Virtex UltraScale+ HBM FPGA (`xcu55c-fsvh2892-2L-e` / Alveo U55C)
-- **Deployment Platform**: Vitis Network Example (VNX) 100GbE UDP/IP subsystem with PYNQ host interface
-
-The objective is to scan streaming UDP packet payloads at line rate to detect malicious signatures (derived from Snort3 rules). While the course baseline requirement specifies processing **1 byte per clock cycle**, this design introduces an innovative **4-Byte Parallel Sliding Window architecture** that processes 4 bytes per cycle with an Initiation Interval ($II = 1$), achieving a measured hardware throughput of **3.23 Gbps** (~1.33 bytes/cycle on physical board).
+- **Author**: Guanhua Huang ([@ChubbyKuma](https://github.com/ChubbyKuma))
+- **Platform**: AMD Xilinx Alveo U55C (Virtex UltraScale+ HBM)
+- **Target Frequency**: 300 MHz
+- **Hardware Throughput**: 3.23 Gbps (~1.33 bytes/cycle)
 
 ---
 
-## 2. System Architecture
+## Project Overview
 
-The accelerator is structured as a two-stage pipelined dataflow kernel (`krnl_proj`) interconnected via streaming FIFOs:
+The objective of this project is to inspect streaming UDP packet payloads in hardware and detect signature patterns derived from Snort rules at high line rates.
+
+The baseline course assignment specifies scanning **1 byte per cycle**. To improve processing performance, this design implements a **4-byte parallel sliding window** architecture that scans 4 consecutive byte positions every clock cycle with an Initiation Interval of 1 ($II = 1$).
+
+### Key Features
+
+1. **4-Byte Parallel Sliding Window**:
+   Instead of a simple 1-byte shift register, the scanner maintains an internal sliding window that shifts by 4 bytes each cycle. Four parallel lanes compare the current window against rule signatures concurrently.
+
+2. **Complete Array Partitioning**:
+   The sliding window registers and lookup structures use `#pragma HLS ARRAY_PARTITION complete` to eliminate memory port contention, allowing all 4 comparison lanes to read data in the same clock cycle.
+
+3. **Loop Dependency Breaking (Parallel Fixed-Mapping)**:
+   In earlier iterations, packing matching results back into the 512-bit output stream using a loop created a loop-carried dependency, resulting in negative timing slack. This was resolved by implementing a parallel fixed-slot mapping: match results from lanes 0 through 3 are directly mapped to designated 128-bit slots in the 512-bit output packet, removing the dependency chain and achieving timing closure.
+
+---
+
+## Architecture
+
+The top kernel `krnl_proj` connects to the 512-bit AXI4-Stream network interface (`pkt`) and uses `#pragma HLS DATAFLOW` between two main pipeline stages:
 
 ```
-+-------------------------------------------------------------------------------------------------+
-|                                    krnl_proj (Vitis HLS Kernel)                                |
-|                                                                                                 |
-|   512-bit UDP Stream (AXIS)                                                                     |
-|   ========================> [ Stage 1: Core Processor & Scanner ]                               |
-|                                - 16 x 4-Byte Chunk Unrolling per 512-bit beat                   |
-|                                - 4-Byte Parallel Sliding Window Register                        |
-|                                - Parallel Rule Matching (II=1, complete array partition)        |
-|                                             |                                                   |
-|                                             | ParallelMatchBatch (hls::stream FIFO, depth=256)   |
-|                                             v                                                   |
-|                             [ Stage 2: Parallel Output Formatter ]                              |
-|                                - Fixed-Slot Parallel Mapping (avoids loop packing dependency)   |
-|                                - Positive timing slack (+0.07 ns)                               |
-|                                             |                                                   |
-|   512-bit Matched Stream                    v                                                   |
-|   <=========================================+                                                   |
-+-------------------------------------------------------------------------------------------------+
+                  512-bit AXI-Stream (n2k)
+                             |
+                             v
+               +---------------------------+
+               |      core_processor       |
+               |                           |
+               |  - Extract 4-byte chunks  |
+               |  - Parallel scanner (x4)  |
+               |  - II = 1 inner pipeline  |
+               +---------------------------+
+                             |
+                             | hls::stream<ParallelMatchBatch>
+                             v
+               +---------------------------+
+               |     output_formatter      |
+               |                           |
+               |  - Fixed-slot mapping     |
+               |  - Output AXI-Stream pkt  |
+               +---------------------------+
+                             |
+                             v
+                  512-bit AXI-Stream (k2n)
 ```
 
-### Key Technical Innovations
-
-1. **Parallel Data Extraction**:
-   - The 512-bit input stream beat (`pkt`) is decomposed into 16 consecutive 4-byte chunks.
-   - An inner pipeline with `#pragma HLS PIPELINE II=1` processes each 4-byte slice simultaneously across 4 parallel lanes.
-
-2. **Parallel Sliding Window with Complete Partitioning**:
-   - Implements a shift register advancing by 4 bytes per cycle (`WINDOW_SIZE = PATTERN_MAX_LEN + 4`).
-   - Uses `#pragma HLS ARRAY_PARTITION variable=window complete` to eliminate memory bank conflicts and allow all comparator lanes simultaneous single-cycle access.
-
-3. **Loop Dependency Breaking via Fixed-Slot Mapping**:
-   - Initial iterative packing loops introduced loop-carried dependencies that degraded timing slack into negative values.
-   - Replaced with a **Parallel Fixed-Mapping strategy** where matches in lanes [0..3] are directly addressed into designated 128-bit slots within the 512-bit egress packet, guaranteeing zero timing closure penalties.
+- **`core_processor`**: Consumes incoming 512-bit beats from the network. Each 64-byte beat is processed as 16 consecutive 4-byte steps. Each step passes 4 bytes into `update_window_and_check_parallel()`.
+- **`scanner`**: Updates the sliding window, decodes characters against the rule set, and writes matches to an internal stream.
+- **`output_formatter`**: Reads matches and maps lane results directly into the outgoing 512-bit AXIS packet without dynamic loop packing.
 
 ---
 
-## 3. Synthesis & Resource Utilization
+## Synthesis Results
 
-Synthesized using **AMD Vitis HLS 2023.2** targeting the `xcu55c-fsvh2892-2L-e`:
+Synthesized with **Vitis HLS 2023.2** for target device `xcu55c-fsvh2892-2L-e`:
 
-| Metric | Result | Target / Budget | Status |
-| :--- | :---: | :---: | :---: |
-| **Timing Slack** | **+0.07 ns** | $\ge 0.00\text{ ns}$ | **Met (Zero Violation)** |
-| **Clock Period** | 3.33 ns (300 MHz) | 3.33 ns | **Met** |
-| **Pipeline Initiation Interval** | **$II = 1$** | $II = 1$ | **Optimal** |
-| **Look-Up Tables (LUT)** | 103,836 (7%) | ~1.3M | Excellent Headroom |
-| **Flip-Flops (FF)** | 81,869 (3%) | ~2.6M | Minimal Footprint |
-| **Block RAM (BRAM)** | 8 (<1%) | ~4,000 | Negligible |
-| **UltraRAM (URAM)** | 0 (0%) | 960 | None Required |
+| Metric | Result | Target / Budget |
+| :--- | :--- | :--- |
+| **Clock Period** | 3.33 ns (300 MHz) | 3.33 ns |
+| **Worst Negative Slack (WNS)** | **+0.07 ns** | >= 0 ns (Met) |
+| **Initiation Interval (II)** | **1** | 1 |
+| **LUT Utilization** | 103,836 (7.96%) | 1,303,680 |
+| **FF Utilization** | 81,869 (3.14%) | 2,607,360 |
+| **BRAM Utilization** | 8 (0.40%) | 2,016 |
+| **URAM Utilization** | 0 (0.00%) | 960 |
 
-Detailed synthesis logs can be inspected in [`csynth.rpt`](csynth.rpt).
+Full synthesis metrics and loop reports are documented in [csynth.rpt](csynth.rpt).
 
 ---
 
-## 4. Hardware Evaluation & Performance
+## Hardware Measurements
 
-The design was tested on physical hardware using the **AMD Alveo U55C** accelerator card coupled with the VNX 100GbE networking stack and PYNQ:
+On-board testing was conducted on an Alveo U55C card using the PYNQ framework and VNX benchmark traffic:
 
 - **Measured Median Throughput**: **3.23 Gbps**
-- **Effective Processing Rate**: ~**1.33 bytes per clock cycle** (substantially exceeding the 1-byte/cycle baseline)
-- **Validation**: Full packet verification across benchmark traffic distributions in Jupyter companion notebooks.
+- **Effective Processing Rate**: **~1.33 bytes per clock cycle**
+- **Theoretical 1 B/cycle Baseline**: 2.40 Gbps at 300 MHz
+- **Speedup over Baseline**: ~134%
 
-For in-depth analysis and experimental curves, refer to the full report: [`DAT480_report.pdf`](DAT480_report.pdf).
+The project report with detailed discussion and measurement plots is available in [DAT480_report.pdf](DAT480_report.pdf).
 
 ---
 
-## 5. Repository Structure
+## Repository Structure
 
-```text
-.
-├── config_files/               # Vitis linker and connectivity configuration files
-│   ├── connectivity_project_if0.ini
-│   └── connectivity_benchmark_*.ini
-├── Notebooks/                  # PYNQ host evaluation & benchmarking suite
-│   ├── throughput.ipynb        # Hardware throughput evaluation notebook
-│   ├── vnx-basic.ipynb         # Basic VNX network packet validation
-│   ├── dask_pynq.py            # Distributed multi-FPGA helper
-│   ├── vnx_utils.py            # VNX network helper library
-│   └── README.md               # Host environment setup guide
-├── src/                        # Vitis HLS C++ kernel implementation
-│   ├── krnl_proj.cpp           # Top kernel & dataflow pipeline (core + formatter)
-│   ├── krnl_proj.h             # Kernel interface & 512-bit packet definitions
-│   ├── scanner.cpp             # 4-byte parallel sliding window pattern scanner
-│   └── scanner.h               # Scanner configurations & window dimensions
-├── csynth.rpt                  # Full Vitis HLS synthesis summary report
-├── DAT480_report.pdf           # Project technical report submitted for DAT480
-└── README.md                   # Repository documentation
+```
+DAT480-Reconfigurable-Computing/
+├── config_files/
+│   ├── connectivity_basic_if0.ini
+│   ├── connectivity_basic_if1.ini
+│   ├── connectivity_basic_if3.ini
+│   ├── connectivity_benchmark_if0.ini
+│   ├── connectivity_benchmark_if1.ini
+│   ├── connectivity_benchmark_if3.ini
+│   ├── connectivity_benchmark_project_if0.ini
+│   └── connectivity_project_if0.ini
+├── Notebooks/
+│   ├── dask_pynq.py          # Multi-node Dask / PYNQ utilities
+│   ├── README.md             # PYNQ environment setup
+│   ├── throughput.ipynb      # Line-rate hardware throughput test
+│   ├── vnx_utils.py          # Network link & socket helper routines
+│   └── vnx-basic.ipynb       # Basic packet test notebook
+├── src/
+│   ├── krnl_proj.cpp         # Top HLS kernel and dataflow stages
+│   ├── krnl_proj.h           # Kernel function prototypes & AXIS packet types
+│   ├── scanner.cpp           # 4-byte parallel pattern scanner implementation
+│   └── scanner.h             # Scanner interface and window size definitions
+├── csynth.rpt                # Vitis HLS synthesis summary
+├── DAT480_report.pdf         # Course final report
+└── README.md                 # Project documentation
 ```
 
 ---
 
-## 6. Getting Started
+## Build & Usage
 
-### Prerequisites
-- **FPGA Synthesis**: AMD Vitis Unified Software Platform 2023.2+
-- **Host System**: Linux (Ubuntu 20.04/22.04 LTS recommended) with Xilinx XRT installed
-- **Python / Host Environment**: Python 3.8+ with `pynq` and `jupyterlab`
-
-### Building the Kernel
+### 1. Compile the Kernel (Vitis HLS)
+Run synthesis using the Vitis HLS flow:
 ```bash
-# Compile C++ HLS kernel to Xilinx Object (.xo)
 vitis_hls -f run_hls.tcl
+```
 
-# Link kernel with VNX shell targeting Alveo U55C
-v++ -l -t hw --platform xilinx_u55c_gen3x16_xdma_3_202210_1 \
+### 2. Link with VNX (Vitis v++)
+Generate the final `.xclbin` bitstream targeting Alveo U55C:
+```bash
+v++ -l -t hw \
+    --platform xilinx_u55c_gen3x16_xdma_3_202210_1 \
     --config config_files/connectivity_project_if0.ini \
     krnl_proj.xo -o krnl_proj.xclbin
 ```
 
-### Running the Benchmarks
-1. Start JupyterLab from the `Notebooks` directory:
-   ```bash
-   cd Notebooks
-   jupyter lab
-   ```
-2. Open [`Notebooks/throughput.ipynb`](Notebooks/throughput.ipynb).
-3. Follow the notebook instructions to download the overlay (`.xclbin`) to the Alveo card and initiate line-rate traffic benchmarking.
-
----
-
-## 7. License & Acknowledgments
-
-This project was developed as part of **DAT480: Reconfigurable Computing** at Chalmers University of Technology.
-Notebook infrastructure and network subsystems build upon [Xilinx / AMD Vitis Network Example (VNX)](https://github.com/Xilinx/xup_vitis_network_example).
+### 3. Run Verification & Benchmarks (Host)
+Launch JupyterLab in the `Notebooks/` directory:
+```bash
+cd Notebooks
+jupyter lab
+```
+Run `throughput.ipynb` to download the overlay to the Alveo card and measure UDP streaming throughput.
